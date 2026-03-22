@@ -474,25 +474,43 @@ let statusMap = {};
 let currentHospitalId = null;
 let currentAvailable = true;
 
-// ===== ログイン =====
+// ===== ログイン（Supabase優先・未設定時はローカルフォールバック） =====
+const DEFAULT_PASSWORD = 'admin1234';
+const SUPABASE_CONFIGURED = !SUPABASE_URL.includes('XXXXXXXXXX');
+
 async function doLogin() {
   const pw = document.getElementById('pw-input').value;
   const errEl = document.getElementById('login-error');
   if (!pw) { errEl.textContent = 'パスワードを入力してください'; return; }
-  try {
-    const { data, error } = await db.from('admin_config').select('password').eq('id', 1).single();
-    if (error) throw error;
-    if (data.password === pw) {
-      document.getElementById('login-screen').style.display = 'none';
-      document.getElementById('main-screen').style.display = 'block';
-      loadAll();
+
+  if (SUPABASE_CONFIGURED) {
+    // Supabase設定済み → DBのパスワードで照合
+    try {
+      const { data, error } = await db.from('admin_config').select('password').eq('id', 1).single();
+      if (error) throw error;
+      if (data.password === pw) {
+        loginSuccess();
+      } else {
+        errEl.textContent = 'パスワードが違います';
+      }
+    } catch(e) {
+      errEl.textContent = '接続エラーが発生しました';
+      console.error(e);
+    }
+  } else {
+    // Supabase未設定 → デフォルトパスワードで照合
+    if (pw === DEFAULT_PASSWORD) {
+      loginSuccess();
     } else {
       errEl.textContent = 'パスワードが違います';
     }
-  } catch(e) {
-    errEl.textContent = '接続エラーが発生しました';
-    console.error(e);
   }
+}
+
+function loginSuccess() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('main-screen').style.display = 'block';
+  loadAll();
 }
 
 document.getElementById('pw-input').addEventListener('keydown', e => {
@@ -519,18 +537,25 @@ function switchTab(tab) {
 // ===== データ読み込み =====
 async function loadAll() {
   try {
-    const [{ data: hList }, { data: sList }] = await Promise.all([
+    const [{ data: hList, error: hErr }, { data: sList, error: sErr }] = await Promise.all([
       db.from('hospitals').select('id, name').order('created_at'),
       db.from('hospital_status').select('hospital_id, available, note, updated_at')
     ]);
+    if (hErr) throw hErr;
     hospitals = hList || [];
     statusMap = {};
     (sList || []).forEach(s => { statusMap[s.hospital_id] = s; });
     populateSelect();
     renderHospitalManage();
-    // 選択中病院があれば表示を維持
     if (currentHospitalId) onHospitalSelect();
-  } catch(e) { console.error(e); }
+  } catch(e) {
+    console.error('Supabase接続エラー:', e);
+    // Supabase未設定でも画面は表示。病院管理タブにエラーを表示。
+    document.getElementById('hospital-manage-list').innerHTML =
+      '<div class="empty" style="color:var(--ng)">Supabaseの接続設定を確認してください</div>';
+    document.getElementById('status-hint').innerHTML =
+      'Supabaseを設定すると病院一覧が表示されます';
+  }
 }
 
 // ===== 受け入れ更新タブ =====
@@ -694,7 +719,7 @@ async function deleteHospital(id, name) {
   } catch(e) { console.error(e); alert('削除に失敗しました'); }
 }
 
-// ===== パスワード変更 =====
+// ===== パスワード変更（Supabase優先） =====
 async function changePassword() {
   const np = document.getElementById('new-pw').value;
   const nc = document.getElementById('new-pw-confirm').value;
@@ -703,11 +728,17 @@ async function changePassword() {
   if (!np) { errEl.textContent = '新しいパスワードを入力してください'; return; }
   if (np.length < 6) { errEl.textContent = '6文字以上で設定してください'; return; }
   if (np !== nc) { errEl.textContent = 'パスワードが一致しません'; return; }
+
+  if (!SUPABASE_CONFIGURED) {
+    errEl.textContent = 'Supabase未設定のため変更できません。先にURLとキーを設定してください。';
+    return;
+  }
+
   try {
     await db.from('admin_config').update({ password: np }).eq('id', 1);
     document.getElementById('new-pw').value = '';
     document.getElementById('new-pw-confirm').value = '';
-    showToast('パスワードを変更しました');
+    showToast('パスワードを変更しました（全デバイスに反映）');
   } catch(e) { errEl.textContent = '変更に失敗しました'; }
 }
 
