@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理画面 — 病院受け入れ状況</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2128;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --ok: #3fb950;
+    --ok-bg: rgba(63, 185, 80, 0.12);
+    --ok-border: rgba(63, 185, 80, 0.4);
+    --ng: #f85149;
+    --ng-bg: rgba(248, 81, 73, 0.12);
+    --ng-border: rgba(248, 81, 73, 0.4);
+    --accent: #58a6ff;
+    --accent-bg: rgba(88, 166, 255, 0.1);
+    --warn: #d29922;
+  }
+
+  body {
+    font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ===== ログイン画面 ===== */
+  #login-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+
+  .login-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 36px 32px;
+    width: 100%;
+    max-width: 360px;
+  }
+
+  .login-box h1 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .login-box p {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 28px;
+  }
+
+  .field { margin-bottom: 16px; }
+
+  .field label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    font-weight: 500;
+    letter-spacing: .04em;
+  }
+
+  input[type="password"],
+  input[type="text"],
+  textarea,
+  select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 14px;
+    color: var(--text);
+    outline: none;
+    transition: border-color .15s;
+    font-family: inherit;
+  }
+
+  input:focus, textarea:focus, select:focus {
+    border-color: var(--accent);
+  }
+
+  .btn {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity .15s, transform .1s;
+  }
+
+  .btn:active { transform: scale(0.98); }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .btn-primary:hover { opacity: 0.88; }
+
+  .btn-danger {
+    background: var(--ng-bg);
+    color: var(--ng);
+    border: 1px solid var(--ng-border);
+  }
+
+  .btn-danger:hover { opacity: 0.8; }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+
+  .btn-ghost:hover { background: var(--surface2); }
+
+  .error-msg {
+    color: var(--ng);
+    font-size: 12px;
+    margin-top: 10px;
+    text-align: center;
+    min-height: 18px;
+  }
+
+  /* ===== メイン画面 ===== */
+  #main-screen { display: none; }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  header h1 { font-size: 15px; font-weight: 600; }
+
+  .logout-btn {
+    font-size: 12px;
+    color: var(--muted);
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+  }
+
+  .logout-btn:hover { color: var(--text); }
+
+  /* タブ */
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    padding: 0 16px;
+  }
+
+  .tab {
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color .15s, border-color .15s;
+  }
+
+  .tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  /* コンテンツエリア */
+  .container {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 24px 16px;
+  }
+
+  /* 受け入れ更新カード */
+  .hospital-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin-bottom: 12px;
+    transition: border-color .2s;
+  }
+
+  .hospital-card.ok { border-color: var(--ok-border); }
+  .hospital-card.ng { border-color: var(--ng-border); }
+
+  .hcard-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+
+  .hcard-name { font-size: 15px; font-weight: 600; }
+
+  .hcard-time { font-size: 11px; color: var(--muted); }
+
+  .toggle-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .toggle-btn {
+    flex: 1;
+    padding: 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1.5px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    transition: all .15s;
+  }
+
+  .toggle-btn.selected-ok {
+    background: var(--ok-bg);
+    color: var(--ok);
+    border-color: var(--ok-border);
+  }
+
+  .toggle-btn.selected-ng {
+    background: var(--ng-bg);
+    color: var(--ng);
+    border-color: var(--ng-border);
+  }
+
+  .note-input {
+    resize: none;
+    height: 64px;
+    margin-bottom: 12px;
+  }
+
+  .save-btn {
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--accent-bg);
+    color: var(--accent);
+    border: 1px solid rgba(88, 166, 255, 0.35);
+    transition: opacity .15s;
+  }
+
+  .save-btn:hover { opacity: 0.8; }
+
+  .save-btn.saved {
+    background: var(--ok-bg);
+    color: var(--ok);
+    border-color: var(--ok-border);
+  }
+
+  /* 病院管理タブ */
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+
+  .add-hospital-form {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 24px;
+  }
+
+  .add-hospital-form input { flex: 1; }
+
+  .add-btn {
+    padding: 10px 18px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .add-btn:hover { opacity: 0.85; }
+
+  .hospital-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 8px;
+  }
+
+  .hospital-list-item span { font-size: 14px; }
+
+  .del-btn {
+    font-size: 12px;
+    color: var(--ng);
+    background: var(--ng-bg);
+    border: 1px solid var(--ng-border);
+    border-radius: 6px;
+    padding: 5px 12px;
+    cursor: pointer;
+  }
+
+  .del-btn:hover { opacity: 0.75; }
+
+  /* パスワード変更タブ */
+  .pw-form {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 400px;
+  }
+
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: #fff;
+    color: #111;
+    padding: 10px 24px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: 0 4px 20px rgba(0,0,0,.4);
+    opacity: 0;
+    transition: opacity .25s, transform .25s;
+    z-index: 100;
+    pointer-events: none;
+  }
+
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .empty { text-align: center; padding: 40px; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+
+<!-- ===== ログイン画面 ===== -->
+<div id="login-screen">
+  <div class="login-box">
+    <h1>🏥 管理画面</h1>
+    <p>病院受け入れ状況 管理システム</p>
+    <div class="field">
+      <label>管理パスワード</label>
+      <input type="password" id="pw-input" placeholder="パスワードを入力" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary" onclick="doLogin()">ログイン</button>
+    <div class="error-msg" id="login-error"></div>
+  </div>
+</div>
+
+<!-- ===== メイン画面 ===== -->
+<div id="main-screen">
+  <header>
+    <h1>管理画面 — 病院受け入れ状況</h1>
+    <button class="logout-btn" onclick="doLogout()">ログアウト</button>
+  </header>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('status')">受け入れ更新</div>
+    <div class="tab" onclick="switchTab('hospitals')">病院管理</div>
+    <div class="tab" onclick="switchTab('password')">パスワード変更</div>
+  </div>
+
+  <!-- 受け入れ更新タブ -->
+  <div id="tab-status" class="container">
+
+    <!-- 病院選択 -->
+    <div class="field" style="margin-bottom:20px">
+      <label>病院を選択</label>
+      <select id="hospital-select" onchange="onHospitalSelect()">
+        <option value="">— 病院を選んでください —</option>
+      </select>
+    </div>
+
+    <!-- 編集フォーム -->
+    <div id="edit-form" style="display:none">
+      <div class="hospital-card" id="edit-card">
+        <div class="hcard-header">
+          <span class="hcard-name" id="edit-name"></span>
+          <span class="hcard-time" id="edit-time"></span>
+        </div>
+        <div class="toggle-row">
+          <button class="toggle-btn" id="btn-ok" onclick="setAvailable(true)">受け入れ可</button>
+          <button class="toggle-btn" id="btn-ng" onclick="setAvailable(false)">受け入れ不可</button>
+        </div>
+        <textarea class="note-input" id="edit-note" placeholder="備考（任意）"></textarea>
+        <button class="save-btn" id="save-btn" onclick="saveStatus()">更新する</button>
+      </div>
+    </div>
+
+    <div id="status-hint" class="empty" style="padding:40px 0">病院を選択してください</div>
+  </div>
+
+  <!-- 病院管理タブ -->
+  <div id="tab-hospitals" class="container" style="display:none">
+    <div class="section-title">病院を追加</div>
+    <div class="add-hospital-form">
+      <input type="text" id="new-hospital-name" placeholder="病院名を入力">
+      <button class="add-btn" onclick="addHospital()">追加</button>
+    </div>
+
+    <div class="section-title">登録済み病院</div>
+    <div id="hospital-manage-list"><div class="empty">読み込み中...</div></div>
+  </div>
+
+  <!-- パスワード変更タブ -->
+  <div id="tab-password" class="container" style="display:none">
+    <div class="pw-form">
+      <div class="field">
+        <label>新しいパスワード</label>
+        <input type="password" id="new-pw" placeholder="新しいパスワード">
+      </div>
+      <div class="field">
+        <label>確認（もう一度入力）</label>
+        <input type="password" id="new-pw-confirm" placeholder="もう一度入力">
+      </div>
+      <button class="btn btn-primary" onclick="changePassword()">パスワードを変更</button>
+      <div class="error-msg" id="pw-error"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// =============================================
+// ★ここを自分のSupabase情報に書き換えてください★
+const SUPABASE_URL = 'https://XXXXXXXXXX.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...';
+// =============================================
+
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let hospitals = [];
+let statusMap = {};
+let currentHospitalId = null;
+let currentAvailable = true;
+
+// ===== ログイン =====
+async function doLogin() {
+  const pw = document.getElementById('pw-input').value;
+  const errEl = document.getElementById('login-error');
+  if (!pw) { errEl.textContent = 'パスワードを入力してください'; return; }
+  try {
+    const { data, error } = await db.from('admin_config').select('password').eq('id', 1).single();
+    if (error) throw error;
+    if (data.password === pw) {
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('main-screen').style.display = 'block';
+      loadAll();
+    } else {
+      errEl.textContent = 'パスワードが違います';
+    }
+  } catch(e) {
+    errEl.textContent = '接続エラーが発生しました';
+    console.error(e);
+  }
+}
+
+document.getElementById('pw-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+
+function doLogout() {
+  document.getElementById('main-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('pw-input').value = '';
+  document.getElementById('login-error').textContent = '';
+}
+
+// ===== タブ切り替え =====
+function switchTab(tab) {
+  ['status', 'hospitals', 'password'].forEach(t => {
+    document.getElementById('tab-' + t).style.display = (t === tab) ? 'block' : 'none';
+  });
+  document.querySelectorAll('.tab').forEach((el, i) => {
+    el.classList.toggle('active', ['status','hospitals','password'][i] === tab);
+  });
+}
+
+// ===== データ読み込み =====
+async function loadAll() {
+  try {
+    const [{ data: hList }, { data: sList }] = await Promise.all([
+      db.from('hospitals').select('id, name').order('created_at'),
+      db.from('hospital_status').select('hospital_id, available, note, updated_at')
+    ]);
+    hospitals = hList || [];
+    statusMap = {};
+    (sList || []).forEach(s => { statusMap[s.hospital_id] = s; });
+    populateSelect();
+    renderHospitalManage();
+    // 選択中病院があれば表示を維持
+    if (currentHospitalId) onHospitalSelect();
+  } catch(e) { console.error(e); }
+}
+
+// ===== 受け入れ更新タブ =====
+function populateSelect() {
+  const sel = document.getElementById('hospital-select');
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">— 病院を選んでください —</option>';
+  hospitals.forEach(h => {
+    const opt = document.createElement('option');
+    opt.value = h.id;
+    opt.textContent = h.name;
+    sel.appendChild(opt);
+  });
+  if (prev) sel.value = prev;
+}
+
+function onHospitalSelect() {
+  const sel = document.getElementById('hospital-select');
+  const id = sel.value;
+  const hint = document.getElementById('status-hint');
+  const form = document.getElementById('edit-form');
+
+  if (!id) {
+    hint.style.display = 'block';
+    form.style.display = 'none';
+    currentHospitalId = null;
+    return;
+  }
+
+  currentHospitalId = id;
+  const h = hospitals.find(x => x.id === id);
+  const s = statusMap[id];
+  currentAvailable = s?.available !== false;
+
+  document.getElementById('edit-name').textContent = h.name;
+  const time = s?.updated_at
+    ? '最終更新: ' + new Date(s.updated_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
+    : '未更新';
+  document.getElementById('edit-time').textContent = time;
+  document.getElementById('edit-note').value = s?.note || '';
+
+  updateToggleUI();
+
+  hint.style.display = 'none';
+  form.style.display = 'block';
+
+  const card = document.getElementById('edit-card');
+  card.className = 'hospital-card ' + (currentAvailable ? 'ok' : 'ng');
+
+  const saveBtn = document.getElementById('save-btn');
+  saveBtn.textContent = '更新する';
+  saveBtn.classList.remove('saved');
+  saveBtn.disabled = false;
+}
+
+function setAvailable(val) {
+  currentAvailable = val;
+  updateToggleUI();
+  const card = document.getElementById('edit-card');
+  card.className = 'hospital-card ' + (val ? 'ok' : 'ng');
+}
+
+function updateToggleUI() {
+  document.getElementById('btn-ok').className =
+    'toggle-btn' + (currentAvailable ? ' selected-ok' : '');
+  document.getElementById('btn-ng').className =
+    'toggle-btn' + (!currentAvailable ? ' selected-ng' : '');
+}
+
+async function saveStatus() {
+  if (!currentHospitalId) return;
+  const btn = document.getElementById('save-btn');
+  btn.textContent = '保存中...';
+  btn.disabled = true;
+
+  const note = document.getElementById('edit-note').value;
+  const now = new Date().toISOString();
+
+  try {
+    const existing = statusMap[currentHospitalId];
+    if (existing) {
+      await db.from('hospital_status')
+        .update({ available: currentAvailable, note, updated_at: now })
+        .eq('hospital_id', currentHospitalId);
+    } else {
+      await db.from('hospital_status')
+        .insert({ hospital_id: currentHospitalId, available: currentAvailable, note });
+    }
+
+    statusMap[currentHospitalId] = {
+      ...statusMap[currentHospitalId],
+      available: currentAvailable,
+      note,
+      updated_at: now
+    };
+
+    document.getElementById('edit-time').textContent =
+      '最終更新: ' + new Date(now).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+
+    btn.textContent = '✓ 保存しました';
+    btn.classList.add('saved');
+    setTimeout(() => {
+      btn.textContent = '更新する';
+      btn.classList.remove('saved');
+      btn.disabled = false;
+    }, 2000);
+
+    const name = hospitals.find(h => h.id === currentHospitalId)?.name;
+    showToast(`「${name}」の情報を更新しました`);
+  } catch(e) {
+    console.error(e);
+    btn.textContent = 'エラー — 再試行';
+    btn.disabled = false;
+  }
+}
+
+// ===== 病院管理タブ =====
+function renderHospitalManage() {
+  const el = document.getElementById('hospital-manage-list');
+  if (hospitals.length === 0) {
+    el.innerHTML = '<div class="empty">登録済みの病院はありません</div>';
+    return;
+  }
+  el.innerHTML = hospitals.map(h => `
+    <div class="hospital-list-item">
+      <span>${h.name}</span>
+      <button class="del-btn" onclick="deleteHospital('${h.id}', '${h.name}')">削除</button>
+    </div>`).join('');
+}
+
+async function addHospital() {
+  const nameEl = document.getElementById('new-hospital-name');
+  const name = nameEl.value.trim();
+  if (!name) return;
+  try {
+    const { data: inserted } = await db.from('hospitals').insert({ name }).select('id, name').single();
+    hospitals.push(inserted);
+    await db.from('hospital_status').insert({ hospital_id: inserted.id, available: true, note: '' });
+    statusMap[inserted.id] = { hospital_id: inserted.id, available: true, note: '', updated_at: new Date().toISOString() };
+    nameEl.value = '';
+    populateSelect();
+    renderHospitalManage();
+    showToast(`「${name}」を追加しました`);
+  } catch(e) { console.error(e); alert('追加に失敗しました'); }
+}
+
+async function deleteHospital(id, name) {
+  if (!confirm(`「${name}」を削除しますか？\n受け入れ状況データも削除されます。`)) return;
+  try {
+    await db.from('hospitals').delete().eq('id', id);
+    hospitals = hospitals.filter(h => h.id !== id);
+    delete statusMap[id];
+    if (currentHospitalId === id) {
+      currentHospitalId = null;
+      document.getElementById('edit-form').style.display = 'none';
+      document.getElementById('status-hint').style.display = 'block';
+    }
+    populateSelect();
+    renderHospitalManage();
+    showToast(`「${name}」を削除しました`);
+  } catch(e) { console.error(e); alert('削除に失敗しました'); }
+}
+
+// ===== パスワード変更 =====
+async function changePassword() {
+  const np = document.getElementById('new-pw').value;
+  const nc = document.getElementById('new-pw-confirm').value;
+  const errEl = document.getElementById('pw-error');
+  errEl.textContent = '';
+  if (!np) { errEl.textContent = '新しいパスワードを入力してください'; return; }
+  if (np.length < 6) { errEl.textContent = '6文字以上で設定してください'; return; }
+  if (np !== nc) { errEl.textContent = 'パスワードが一致しません'; return; }
+  try {
+    await db.from('admin_config').update({ password: np }).eq('id', 1);
+    document.getElementById('new-pw').value = '';
+    document.getElementById('new-pw-confirm').value = '';
+    showToast('パスワードを変更しました');
+  } catch(e) { errEl.textContent = '変更に失敗しました'; }
+}
+
+// ===== トースト通知 =====
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+</script>
+</body>
+</html>
