@@ -212,26 +212,41 @@
     font-size: 14px;
   }
 
-  .history-section {
-    margin-top: 28px;
+  .card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 6px;
   }
 
-  .history-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--muted);
-    letter-spacing: .06em;
-    text-transform: uppercase;
-    margin-bottom: 10px;
+  .history-toggle {
+    font-size: 11px;
+    color: var(--accent);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    opacity: 0.8;
   }
+
+  .history-toggle:hover { opacity: 1; }
+
+  .card-history {
+    display: none;
+    margin-top: 10px;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+  }
+
+  .card-history.open { display: block; }
 
   .history-item {
     display: flex;
     align-items: baseline;
-    gap: 10px;
-    padding: 8px 0;
+    gap: 8px;
+    padding: 5px 0;
     border-bottom: 1px solid var(--border);
-    font-size: 13px;
+    font-size: 12px;
   }
 
   .history-item:last-child { border-bottom: none; }
@@ -240,18 +255,12 @@
     flex-shrink: 0;
     font-size: 11px;
     color: var(--muted);
-    min-width: 40px;
-  }
-
-  .history-name {
-    flex-shrink: 0;
-    font-weight: 500;
-    min-width: 120px;
+    min-width: 38px;
   }
 
   .history-badge {
-    font-size: 11px;
-    padding: 2px 8px;
+    font-size: 10px;
+    padding: 1px 7px;
     border-radius: 10px;
     flex-shrink: 0;
   }
@@ -270,11 +279,17 @@
 
   .history-note {
     color: var(--muted);
-    font-size: 12px;
+    font-size: 11px;
     flex: 1;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .history-empty {
+    font-size: 11px;
+    color: var(--muted);
+    padding: 4px 0;
   }
 
   .empty { text-align: center; padding: 20px; color: var(--muted); font-size: 13px; }
@@ -322,11 +337,6 @@
 
   <div class="card-list" id="card-list">
     <div class="empty">読み込み中...</div>
-  </div>
-
-  <div class="history-section">
-    <div class="history-title">過去24時間の更新履歴</div>
-    <div id="history-list"><div class="empty">読み込み中...</div></div>
   </div>
 </div>
 
@@ -388,6 +398,9 @@ function formatTime(iso) {
   return d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
 }
 
+// 各カードの履歴展開状態を保持
+const openHistory = new Set();
+
 function render() {
   const list = document.getElementById('card-list');
   const okCount = hospitals.filter(h => statusMap[h.id]?.available !== false).length;
@@ -400,55 +413,75 @@ function render() {
 
   if (hospitals.length === 0) {
     list.innerHTML = '<div class="empty">病院情報がありません</div>';
-  } else {
-    const sorted = [...hospitals].sort((a, b) => {
-      const aOk = statusMap[a.id]?.available !== false;
-      const bOk = statusMap[b.id]?.available !== false;
-      return (aOk ? 1 : 0) - (bOk ? 1 : 0);
-    });
-
-    list.innerHTML = sorted.map(h => {
-      const s = statusMap[h.id];
-      const ok = s?.available !== false;
-      const note = s?.note || '';
-      const time = formatTime(s?.updated_at);
-      return `
-        <div class="card ${ok ? 'ok' : 'ng'}">
-          <div class="card-header">
-            <span class="hospital-name">${h.name}</span>
-            <span class="badge ${ok ? 'ok' : 'ng'}">${ok ? '受け入れ可' : '受け入れ不可'}</span>
-          </div>
-          ${note ? `<div class="card-note">${note}</div>` : ''}
-          <div class="card-time">更新: ${time}</div>
-        </div>`;
-    }).join('');
-  }
-
-  renderHistory();
-}
-
-function renderHistory() {
-  const el = document.getElementById('history-list');
-  if (historyList.length === 0) {
-    el.innerHTML = '<div class="empty">更新履歴はありません</div>';
     return;
   }
-  const hospitalMap = {};
-  hospitals.forEach(h => { hospitalMap[h.id] = h.name; });
 
-  el.innerHTML = historyList.map(h => {
-    const name = hospitalMap[h.hospital_id] || '—';
+  const sorted = [...hospitals].sort((a, b) => {
+    const aOk = statusMap[a.id]?.available !== false;
+    const bOk = statusMap[b.id]?.available !== false;
+    return (aOk ? 1 : 0) - (bOk ? 1 : 0);
+  });
+
+  list.innerHTML = sorted.map(h => {
+    const s = statusMap[h.id];
+    const ok = s?.available !== false;
+    const note = s?.note || '';
+    const time = formatTime(s?.updated_at);
+    const isOpen = openHistory.has(h.id);
+    const cnt = historyForHospital(h.id).length;
+    const btnLabel = isOpen ? '▲ 履歴を閉じる' : `▼ 履歴 (${cnt}件)`;
+    const histHTML = renderHistoryItems(historyForHospital(h.id));
+    return `
+      <div class="card ${ok ? 'ok' : 'ng'}">
+        <div class="card-header">
+          <span class="hospital-name">${h.name}</span>
+          <span class="badge ${ok ? 'ok' : 'ng'}">${ok ? '受け入れ可' : '受け入れ不可'}</span>
+        </div>
+        ${note ? `<div class="card-note">${note}</div>` : ''}
+        <div class="card-footer">
+          <span class="card-time">更新: ${time}</span>
+          <button class="history-toggle" onclick="toggleHistory('${h.id}')">${btnLabel}</button>
+        </div>
+        <div class="card-history ${isOpen ? 'open' : ''}" id="hist-${h.id}">
+          ${histHTML}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function historyForHospital(hospitalId) {
+  return historyList.filter(h => h.hospital_id === hospitalId);
+}
+
+function renderHistoryItems(items) {
+  if (items.length === 0) return '<div class="history-empty">履歴はありません</div>';
+  return items.map(h => {
     const ok = h.available !== false;
     const time = formatTime(h.changed_at);
     const note = h.note || '';
     return `
       <div class="history-item">
         <span class="history-time">${time}</span>
-        <span class="history-name">${name}</span>
         <span class="history-badge ${ok ? 'ok' : 'ng'}">${ok ? '受入可' : '受入不可'}</span>
         ${note ? `<span class="history-note">${note}</span>` : ''}
       </div>`;
   }).join('');
+}
+
+function toggleHistory(hospitalId) {
+  if (openHistory.has(hospitalId)) {
+    openHistory.delete(hospitalId);
+  } else {
+    openHistory.add(hospitalId);
+  }
+  const panel = document.getElementById('hist-' + hospitalId);
+  const btn = document.querySelector(`button[onclick="toggleHistory('${hospitalId}')"]`);
+  const isOpen = openHistory.has(hospitalId);
+  if (panel) panel.classList.toggle('open', isOpen);
+  if (btn) {
+    const cnt = historyForHospital(hospitalId).length;
+    btn.textContent = isOpen ? '▲ 履歴を閉じる' : `▼ 履歴 (${cnt}件)`;
+  }
 }
 
 // リアルタイム購読
@@ -459,7 +492,7 @@ function subscribe() {
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'hospital_status_history' }, payload => {
       historyList.unshift(payload.new);
       if (historyList.length > 50) historyList.pop();
-      renderHistory();
+      render();
     })
     .subscribe();
 }
