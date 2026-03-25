@@ -466,7 +466,6 @@
 const SUPABASE_URL = 'https://lidypwvgdhuuizgviyga.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxpZHlwd3ZnZGh1dWl6Z3ZpeWdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwNTMwMTcsImV4cCI6MjA4OTYyOTAxN30.hp-vX_RZ4sloSdxXiPBfsEXDzMrteHxToq4noNOd-ow';
 // =============================================
-
 const { createClient } = supabase;
 const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -632,7 +631,8 @@ async function saveStatus() {
   btn.textContent = '保存中...';
   btn.disabled = true;
 
-  const note = document.getElementById('edit-note').value;
+  const note = currentAvailable ? '' : document.getElementById('edit-note').value;
+  if (currentAvailable) document.getElementById('edit-note').value = '';
   const now = new Date().toISOString();
 
   try {
